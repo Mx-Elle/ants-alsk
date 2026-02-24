@@ -14,7 +14,6 @@ from board import Board, Entity, generate_board, toroidal_distance_2
 from dataclasses import dataclass
 
 from random_player import RandomBot
-import queue
 
 AntMove = tuple[tuple[int, int], tuple[int, int]]
 
@@ -169,8 +168,8 @@ def run_players(
         p2.move_ants,
         args=(board.get_vision(2, spec.vision_radius), food[2]),
     )
-    p1_moves = p1_process.get(spec.time_per_turn)
-    p2_moves = p2_process.get(spec.time_per_turn)
+    p1_moves = p1_process.get()
+    p2_moves = p2_process.get()
     p1_moves = p1_moves if p1_moves else set()
     p2_moves = p2_moves if p2_moves else set()
     p1_moves = {
