@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass
-from multiprocessing import Process, Queue
+from multiprocessing import Pool
 import numbers
 import sys
 from typing import Protocol, Type
@@ -51,8 +51,7 @@ class Player(Protocol):
         self,
         vision: set[tuple[tuple[int, int], Entity]],
         stored_food: int,
-        move_queue: Queue,
-    ): ...
+    ) -> set[AntMove]: ...
 
 
 @dataclass
@@ -156,50 +155,34 @@ def validate(move: AntMove) -> bool:
         return True
     except:
         return False
-    
-def get_all(q: Queue) -> set[AntMove]:
-    out = set()
-    while not q.empty():
-        try:
-            out.add(q.get_nowait())
-        except queue.Empty:
-            break
-    return out
 
 
 def run_players(
     spec: GameSpecification, p1: Player, p2: Player, board: Board, food: dict[int, int]
 ) -> tuple[set[AntMove], set[AntMove]]:
-    p1_queue = Queue()
-    p1_process = Process(
-        target=p1.move_ants,
-        args=(board.get_vision(1, spec.vision_radius), food[1], p1_queue),
+    pool = Pool(2)
+    p1_process = pool.apply_async(
+        p1.move_ants,
+        args=(board.get_vision(1, spec.vision_radius), food[1]),
     )
-    p2_queue = Queue()
-    p2_process = Process(
-        target=p2.move_ants,
-        args=(board.get_vision(2, spec.vision_radius), food[2], p2_queue),
+    p2_process = pool.apply_async(
+        p2.move_ants,
+        args=(board.get_vision(2, spec.vision_radius), food[2]),
     )
-    p1_process.start()
-    p2_process.start()
-    p1_process.join(spec.time_per_turn)
-    p2_process.join(spec.time_per_turn)
-    p1_moves = get_all(p1_queue)
+    p1_moves = p1_process.get(spec.time_per_turn)
+    p2_moves = p2_process.get(spec.time_per_turn)
+    p1_moves = p1_moves if p1_moves else set()
+    p2_moves = p2_moves if p2_moves else set()
     p1_moves = {
         (board.wrap(move[0]), board.wrap(move[1]))
         for move in p1_moves
         if validate(move)
     }
-    p2_moves = get_all(p2_queue)
     p2_moves = {
         (board.wrap(move[0]), board.wrap(move[1]))
         for move in p2_moves
         if validate(move)
     }
-    p1_process.terminate()
-    p2_process.terminate()
-    p1_queue.close()
-    p2_queue.close()
     return p1_moves, p2_moves
 
 
