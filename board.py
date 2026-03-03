@@ -184,6 +184,19 @@ def toroidal_distance_2(
     return dr**2 + dc**2
 
 
+@cache
+def _cells_within_distance(dist: float) -> npt.NDArray[np.int_]:
+    possible = list(product(range(-int(dist), int(dist) + 1), repeat=2))
+    possible = [c for c in possible if np.linalg.norm(c) <= dist]
+    return np.array(possible)
+
+
+def cells_within_distance(
+    dist: float, coord: tuple[int, int], shape: tuple[int, int]
+) -> set[tuple[int, int]]:
+    return {tuple(row) for row in ((_cells_within_distance(dist) + coord) % shape)}
+
+
 def _segment(walls: npt.NDArray[np.int_]) -> npt.NDArray[np.int_]:
     seg = 1
     segments = np.zeros(walls.shape)

@@ -1,4 +1,3 @@
-from multiprocessing import Queue
 from random import choice
 from board import Entity, neighbors
 import numpy as np

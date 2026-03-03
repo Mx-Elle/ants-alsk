@@ -1,8 +1,8 @@
 from copy import deepcopy
 from dataclasses import dataclass
-from multiprocessing import Pool
 import numbers
 import sys
+from time import monotonic
 from typing import Protocol, Type
 
 import numpy as np
@@ -10,7 +10,7 @@ import numpy.typing as npt
 import pygame
 import pygame.locals
 from tqdm import trange
-from board import Board, Entity, generate_board, toroidal_distance_2
+from board import Board, Entity, cells_within_distance, generate_board
 from dataclasses import dataclass
 
 from random_player import RandomBot
@@ -60,8 +60,8 @@ class GameSpecification:
     harvest_radius: int = 1
     vision_radius: int = 8
     battle_radius: int = 3
-    max_turns: int = 1_000
-    time_per_turn: float = 0.2
+    max_turns: int = 1000
+    time_per_turn: float = 0.3
 
 
 def play_game(
@@ -99,7 +99,13 @@ def play_game(
                 sys.exit()
 
         spawn_ants(board, food, p1_hills, p2_hills)
-        p1_moves, p2_moves = run_players(spec, p1, p2, board, food)
+        try:
+            p1_moves, p2_moves = run_players(spec, p1, p2, board, food)
+        except TimeoutError as e:
+            if "p1" in str(e):
+                print(f"Blue {p2.name} wins due to opponent timing out.")
+            if "p2" in str(e):
+                print(f"Red {p1.name} wins due to opponent timing out.")
         move_ants(board, p1_moves, p2_moves)
         combat(board, spec.battle_radius)
         flatten_hills(board)
@@ -113,10 +119,10 @@ def play_game(
         p1_hill_count = len(set(zip(*np.where(board.hills == 1))))
         p2_hill_count = len(set(zip(*np.where(board.hills == 2))))
         if p1_hill_count == 0:
-            print(f"Blue {p1.name} wins by destroying all opposing hills")
+            print(f"Blue {p2.name} wins by destroying all opposing hills")
             return
         if p2_hill_count == 0:
-            print(f"Red {p2.name} wins by destroying all opposing hills")
+            print(f"Red {p1.name} wins by destroying all opposing hills")
             return
     p1_hill_count = len(set(zip(*np.where(board.hills == 1))))
     p2_hill_count = len(set(zip(*np.where(board.hills == 2))))
@@ -159,19 +165,22 @@ def validate(move: AntMove) -> bool:
 def run_players(
     spec: GameSpecification, p1: Player, p2: Player, board: Board, food: dict[int, int]
 ) -> tuple[set[AntMove], set[AntMove]]:
-    pool = Pool(2)
-    p1_process = pool.apply_async(
-        p1.move_ants,
-        args=(board.get_vision(1, spec.vision_radius), food[1]),
-    )
-    p2_process = pool.apply_async(
-        p2.move_ants,
-        args=(board.get_vision(2, spec.vision_radius), food[2]),
-    )
-    p1_moves = p1_process.get()
-    p2_moves = p2_process.get()
-    p1_moves = p1_moves if p1_moves else set()
-    p2_moves = p2_moves if p2_moves else set()
+    start = monotonic()
+    try:
+        p1_moves = p1.move_ants(board.get_vision(1, spec.vision_radius), food[1])
+    except:
+        p1_moves = set()
+    p1_time = monotonic() - start
+    if p1_time > spec.time_per_turn:
+        raise TimeoutError("p1 timeout")
+    start = monotonic()
+    try:
+        p2_moves = p2.move_ants(board.get_vision(2, spec.vision_radius), food[2])
+    except:
+        p2_moves = set()
+    p2_time = monotonic() - start
+    if p2_time > spec.time_per_turn:
+        raise TimeoutError("p2 timeout")
     p1_moves = {
         (board.wrap(move[0]), board.wrap(move[1]))
         for move in p1_moves
@@ -192,7 +201,7 @@ def move_ants(board: Board, p1_moves: set[AntMove], p2_moves: set[AntMove]) -> N
         if start != end
         and start in set(zip(*np.where(board.ants == 1)))
         and not board.walls[end]
-        and toroidal_distance_2(start, end, board.shape) <= 1
+        and end in cells_within_distance(1, start, board.shape)
     }
     p2_actions = {
         start: end
@@ -200,7 +209,7 @@ def move_ants(board: Board, p1_moves: set[AntMove], p2_moves: set[AntMove]) -> N
         if start != end
         and start in set(zip(*np.where(board.ants == 2)))
         and not board.walls[end]
-        and toroidal_distance_2(start, end, board.shape) <= 1
+        and end in cells_within_distance(1, start, board.shape)
     }
     p1_origins, p1_destinations = p1_actions.keys(), list(p1_actions.values())
     p2_origins, p2_destinations = p2_actions.keys(), list(p2_actions.values())
@@ -247,27 +256,23 @@ def spawn_ants(
 
 
 def combat(board: Board, battle_radius: int) -> None:
-    br_2 = battle_radius**2
-    p1_ant_damage = {coord: 0.0 for coord in zip(*np.where(board.ants == 1))}
-    p1_ants_in_range = {coord: set() for coord in p1_ant_damage}
-    p2_ant_damage = {coord: 0.0 for coord in zip(*np.where(board.ants == 2))}
-    p2_ants_in_range = {coord: set() for coord in p2_ant_damage}
-    for ant_1, range_1 in p1_ants_in_range.items():
-        for ant_2, range_2 in p2_ants_in_range.items():
-            if toroidal_distance_2(ant_1, ant_2, board.shape) <= br_2:
-                range_1.add(ant_2)
-                range_2.add(ant_1)
-    for ant_1, range_1 in p1_ants_in_range.items():
-        if not range_1:
+    p1_ants = set(zip(*np.where(board.ants == 1)))
+    p2_ants = set(zip(*np.where(board.ants == 2)))
+    p1_ant_damage = {ant: 0.0 for ant in p1_ants}
+    p2_ant_damage = {ant: 0.0 for ant in p2_ants}
+    for ant in p1_ants:
+        enemies = cells_within_distance(battle_radius, ant, board.shape) & p2_ants
+        if not enemies:
             continue
-        damage = 1 / len(range_1)
-        for enemy in range_1:
+        damage = 1 / len(enemies)
+        for enemy in enemies:
             p2_ant_damage[enemy] += damage
-    for ant_2, range_2 in p2_ants_in_range.items():
-        if not range_2:
+    for ant in p2_ants:
+        enemies = cells_within_distance(battle_radius, ant, board.shape) & p1_ants
+        if not enemies:
             continue
-        damage = 1 / len(range_2)
-        for enemy in range_2:
+        damage = 1 / len(enemies)
+        for enemy in enemies:
             p1_ant_damage[enemy] += damage
     for ant in {a for a in p1_ant_damage if p1_ant_damage[a] >= 1} | {
         a for a in p2_ant_damage if p2_ant_damage[a] >= 1
@@ -282,22 +287,19 @@ def flatten_hills(board: Board) -> None:
 
 
 def harvest(board: Board, collect_radius: int, food: dict[int, int]) -> None:
-    cr_2 = collect_radius**2
     all_ants: set[tuple[int, int]] = set(zip(*np.where(board.ants != 0)))
-    for f in zip(*np.where(board.food)):
-        ants = {
-            board.ants[a]
-            for a in all_ants
-            if toroidal_distance_2(a, f, board.shape) <= cr_2
-        }
-        if len(ants) >= 1:
+    all_food = set(zip(*np.where(board.food)))
+    for f in all_food:
+        ants = cells_within_distance(collect_radius, f, board.shape) & all_ants
+        ant_colors = {board.ants[ant] for ant in ants}
+        if len(ant_colors) >= 1:
             board.food[f] = 0
-        if len(ants) == 1:
-            food[ants.pop()] += 1
+        if len(ant_colors) == 1:
+            food[ant_colors.pop()] += 1
 
 
 def main():
-    b = generate_board(80, 80, hills_per_player=3)
+    b = generate_board(60, 60, hills_per_player=2)
     spec = GameSpecification(b)
     play_game(spec, RandomBot, RandomBot)
 
