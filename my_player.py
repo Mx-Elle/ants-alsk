@@ -296,7 +296,7 @@ class myBot: # classes of ants: foragers, attackers
             #     best_step = n
 
         np_scores = np.array(scores)
-
+        np_scores -= min(np_scores)
         exp_scores = np.exp(-4*np_scores)
         #print(exp_scores)
         probs = exp_scores / np.sum(exp_scores)
@@ -337,9 +337,10 @@ class myBot: # classes of ants: foragers, attackers
             #     best_step = n
 
         np_scores = np.array(scores)
-
+        np_scores -= min(np_scores)
         exp_scores = np.exp(-2*np_scores)
         #print(exp_scores)
+        
         probs = exp_scores / np.sum(exp_scores)
         
         #print(probs)
@@ -377,7 +378,7 @@ class myBot: # classes of ants: foragers, attackers
             #     best_step = n
 
         np_scores = np.array(scores)
-
+        np_scores -= min(np_scores)
         exp_scores = np.exp(-2*np_scores)
         #print(exp_scores)
         probs = exp_scores / np.sum(exp_scores) # do a probability distribution
@@ -409,7 +410,7 @@ class myBot: # classes of ants: foragers, attackers
 
                 percentage_defend = 0.05
                 percentage_gather = 0.1
-                if (num_ants > 1):
+                if (num_ants > 2):
                     percentage_gather = max(1-1/np.log(num_ants/2), 0)
                 percentage_attack = 1-percentage_gather
 
@@ -450,7 +451,7 @@ class myBot: # classes of ants: foragers, attackers
             
             danger_level = max(0, local_enemies - local_friends) # find numerical advantage
             
-            # Apply the threat to a small 'engagement zone' around the enemy
+            # apply the threat to a small 'engagement zone' around the enemy
             for dr in range(-3, 4):
                 for dc in range(-3, 4):
                     tr, tc = (er + dr) % rows, (ec + dc) % cols

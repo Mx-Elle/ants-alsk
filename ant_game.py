@@ -14,6 +14,7 @@ from board import Board, Entity, cells_within_distance, generate_board
 from dataclasses import dataclass
 
 from random_player import RandomBot
+from my_player import myBot
 
 AntMove = tuple[tuple[int, int], tuple[int, int]]
 
@@ -143,6 +144,8 @@ def play_game(
             print(f"Blue {p2.name} wins on score. ({p2_score} to {p1_score})")
         else:
             print(f"Drawn game!")
+    print(food[2])
+    print(len(set(zip(*np.where(board.ants == 2)))))
 
 
 def validate(move: AntMove) -> bool:
@@ -301,7 +304,7 @@ def harvest(board: Board, collect_radius: int, food: dict[int, int]) -> None:
 def main():
     b = generate_board(60, 60, hills_per_player=2)
     spec = GameSpecification(b)
-    play_game(spec, RandomBot, RandomBot)
+    play_game(spec, RandomBot, myBot)
 
 
 if __name__ == "__main__":
